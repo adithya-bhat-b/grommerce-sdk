@@ -1,54 +1,91 @@
-import User from "../../src/entities/user"
-let dbConnection
-export function accessTokenUtility(injectedDbConnection) {
-  dbConnection = injectedDbConnection
+const { User } = require("../../src/entities/user")
+let userRepository;
+
+module.exports = injectedDbConnection => {
+
+  userRepository = injectedDbConnection.getRepository(User)
   return {
-   saveAccessToken: saveAccessToken,
-   getUserIDFromBearerToken: getUserIDFromBearerToken
+
+   registerUserInDB: registerUserInDB,
+   getUserFromCrentials: getUserFromCrentials,
+   doesUserExist: doesUserExist
  }
 }
 
 /**
- * Saves the accessToken against the user with the specified userID
- * It provides the results in a callback which takes 2 parameters:
+ * attempts to register a user in the DB with the specified details.
+ * it provides the results in the specified callback which takes a
+ * DataResponseObject as its only parameter
  *
- * @param accessToken
- * @param userID
- * @param callback - takes either an error or null if we successfully saved the accessToken
+ * @param username
+ * @param password
+ * @param registrationCallback - takes a DataResponseObject
  */
-function saveAccessToken(accessToken, userID, callback) {
+async function registerUserInDB(username, password){
 
-  const user = new User()
-  user
-  const getUserQuery =  `INSERT INTO access_tokens (access_token, user_id) VALUES ("${accessToken}", ${userID}) ON DUPLICATE KEY UPDATE access_token = "${accessToken}";`
+  //create query using the data in the req.body to register the user in the db
+  //const registerUserQuery = `INSERT INTO users (username, user_password) VALUES ('${username}', SHA('${password}'))`
+  let user = new User()
+  user.username = username
+  user.password = password
+
+  //execute the query to register the user
+  //dbConnection.query(registerUserQuery, registrationCallback)
+  savedUser = await userRepository.save(user)
+}
+
+/**
+ * Gets the user with the specified username and password.
+ * It provides the results in a callback which takes an:
+ * an error object which will be set to null if there is no error.
+ * and a user object which will be null if there is no user
+ *
+ * @param username
+ * @param password
+ * @param callback - takes an error and a user object
+ */
+function getUserFromCrentials(username, password, callback) {
+
+  //create query using the data in the req.body to register the user in the db
+  const getUserQuery = `SELECT * FROM users WHERE username = '${username}' AND user_password = SHA('${password}')`
+
+  console.log('getUserFromCrentials query is: ', getUserQuery);
 
   //execute the query to get the user
   dbConnection.query(getUserQuery, (dataResponseObject) => {
 
       //pass in the error which may be null and pass the results object which we get the user from if it is not null
-      callback(dataResponseObject.error)
+      callback(false, dataResponseObject.results !== null && dataResponseObject.results.length  === 1 ?  dataResponseObject.results[0] : null)
   })
 }
 
 /**
- * Retrieves the userID from the row which has the spcecified bearerToken. It passes the userID
- * to the callback if it has been retrieved else it passes null
+ * Determines whether or not user with the specified userName exists.
+ * It provides the results in a callback which takes 2 parameters:
+ * an error object which will be set to null if there is no error, and
+ * secondly a boolean value which says whether or the user exists.
+ * The boolean value is set to true if the user exists else it's set
+ * to false or it will be null if the results object is null.
  *
- * @param bearerToken
- * @param callback - takes the user id we if we got the userID or null to represent an error
+ * @param username
+ * @param callback - takes an error and a boolean value indicating
+ *                   whether a user exists
  */
-function getUserIDFromBearerToken(bearerToken, callback){
+function doesUserExist(username, callback) {
 
-  //create query to get the userID from the row which has the bearerToken
-  const getUserIDQuery = `SELECT * FROM access_tokens WHERE access_token = '${bearerToken}';`
+  //create query to check if the user already exists
+  const doesUserExistQuery = `SELECT * FROM users WHERE username = '${username}'`
 
-  //execute the query to get the userID
-  dbConnection.query(getUserIDQuery, (dataResponseObject) => {
+  //holds the results  from the query
+  const sqlCallback = (dataResponseObject) => {
 
-      //get the userID from the results if its available else assign null
-      const userID = dataResponseObject.results != null && dataResponseObject.results.length == 1 ?
-                                                              dataResponseObject.results[0].user_id : null
+      //calculate if user exists or assign null if results is null
+      const doesUserExist = dataResponseObject.results !== null ? dataResponseObject.results.length > 0 ? true : false : null
 
-      callback(userID)
-  })
+      //check if there are any users with this username and return the appropriate value
+      callback(dataResponseObject.error, doesUserExist)
+  }
+
+  //execute the query to check if the user exists
+  dbConnection.query(doesUserExistQuery, sqlCallback)
 }
